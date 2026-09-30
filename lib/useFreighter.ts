@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
+import { broadcastWalletChange, subscribeWallet } from '@/lib/walletEvents'
 
 declare global {
   interface Window {
@@ -8,7 +9,10 @@ declare global {
       isConnected: () => Promise<boolean>
       getPublicKey: () => Promise<string>
       getNetwork: () => Promise<string>
-      signTransaction: (xdr: string, options: { networkPassphrase: string }) => Promise<string>
+      signTransaction: (
+        xdr: string,
+        options: { networkPassphrase: string }
+      ) => Promise<string>
     }
     /** Last connected public key, mirrored for components that mount later. */
     __freighterPublicKey?: string | null
@@ -38,6 +42,7 @@ export function useFreighter() {
           window.freighter!.getPublicKey(),
           window.freighter!.getNetwork(),
         ])
+        broadcastWalletChange(publicKey)
         setState({ publicKey, network, loading: false, error: null })
       }
     } catch {
@@ -48,6 +53,14 @@ export function useFreighter() {
   useEffect(() => {
     initialize()
   }, [initialize])
+
+  useEffect(
+    () =>
+      subscribeWallet((publicKey) => {
+        setState((prev) => ({ ...prev, publicKey, network: null }))
+      }),
+    []
+  )
 
   const connect = useCallback(async () => {
     setState((prev) => ({ ...prev, loading: true, error: null }))
@@ -65,13 +78,19 @@ export function useFreighter() {
         window.freighter.getPublicKey(),
         window.freighter.getNetwork(),
       ])
+      broadcastWalletChange(publicKey)
       setState({ publicKey, network, loading: false, error: null })
     } catch {
-      setState((prev) => ({ ...prev, loading: false, error: 'Connection rejected' }))
+      setState((prev) => ({
+        ...prev,
+        loading: false,
+        error: 'Connection rejected',
+      }))
     }
   }, [])
 
   const disconnect = useCallback(() => {
+    broadcastWalletChange(null)
     setState({ publicKey: null, network: null, loading: false, error: null })
   }, [])
 

@@ -1,45 +1,37 @@
 'use client'
 
-import { useState, useEffect } from 'react'
-
-const WALLET_STORAGE_KEY = 'freighter_public_key'
+import { useEffect, useRef, useState } from 'react'
+import { useWalletState } from '@/hooks/useWalletState'
 
 interface FreighterConnectProps {
   className?: string
   onConnect?: (publicKey: string) => void
 }
 
-export default function FreighterConnect({ onConnect, className = '' }: FreighterConnectProps) {
-  const [publicKey, setPublicKey] = useState<string | null>(null)
+export default function FreighterConnect({
+  onConnect,
+  className = '',
+}: FreighterConnectProps) {
+  const { publicKey, initialized, publish } = useWalletState()
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [isConnecting, setIsConnecting] = useState(false)
-  const [isInitializing, setIsInitializing] = useState(true)
 
+  // Held in a ref rather than listed as a dependency: callers commonly pass an
+  // inline arrow, which changes identity on every parent render. Depending on it
+  // would re-fire the callback each time, and a parent that sets state in there
+  // would loop forever. The ref still sees the latest callback. Declared before
+  // the effect below so it is populated first on mount.
+  const onConnectRef = useRef(onConnect)
   useEffect(() => {
-    checkConnection()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+    onConnectRef.current = onConnect
+  })
 
-  async function checkConnection() {
-    try {
-      if (!window.freighter) {
-        return
-      }
-
-      const connected = await window.freighter.isConnected()
-      if (connected) {
-        const key = await window.freighter.getPublicKey()
-        setPublicKey(key)
-        window.__freighterPublicKey = key
-        onConnect?.(key)
-      }
-    } catch {
-      // Connection check failed
-    } finally {
-      setIsInitializing(false)
-    }
-  }
+  // Fired off the shared state rather than off the click handler, so a
+  // connection made through any other button still notifies the parent.
+  useEffect(() => {
+    if (publicKey) onConnectRef.current?.(publicKey)
+  }, [publicKey])
 
   async function connect() {
     if (isConnecting) return
@@ -62,10 +54,7 @@ export default function FreighterConnect({ onConnect, className = '' }: Freighte
         return
       }
 
-      setPublicKey(key)
-      window.__freighterPublicKey = key
-      localStorage.setItem(WALLET_STORAGE_KEY, key)
-      onConnect?.(key)
+      publish(key)
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Connection rejected'
       setError(message)
@@ -76,11 +65,10 @@ export default function FreighterConnect({ onConnect, className = '' }: Freighte
   }
 
   function disconnect() {
-    setPublicKey(null)
-    localStorage.removeItem(WALLET_STORAGE_KEY)
+    publish(null)
   }
 
-  if (isInitializing) {
+  if (!initialized) {
     return (
       <div className={`flex items-center gap-2 ${className}`}>
         <div className="w-24 h-9 rounded-lg bg-zinc-800 animate-pulse" />
@@ -114,19 +102,41 @@ export default function FreighterConnect({ onConnect, className = '' }: Freighte
       >
         {loading ? (
           <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
-            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+            <circle
+              className="opacity-25"
+              cx="12"
+              cy="12"
+              r="10"
+              stroke="currentColor"
+              strokeWidth="4"
+            />
+            <path
+              className="opacity-75"
+              fill="currentColor"
+              d="M4 12a8 8 0 018-8v8H4z"
+            />
           </svg>
         ) : (
-          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-              d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z" />
+          <svg
+            className="w-4 h-4"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z"
+            />
           </svg>
         )}
         Connect Freighter
       </button>
       {error ? (
-        <p className="mt-2 text-xs text-red-400" role="alert">{error}</p>
+        <p className="mt-2 text-xs text-red-400" role="alert">
+          {error}
+        </p>
       ) : null}
     </div>
   )
